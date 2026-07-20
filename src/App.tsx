@@ -2,11 +2,13 @@ import { DrawingUtils, FilesetResolver, PoseLandmarker } from '@mediapipe/tasks-
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { coach, type Cue } from './formEngine'
 import { exercises, findExercise, type ExerciseId } from './exercises'
+import exerciseGuide from './assets/exercise-guide.png'
 
 const WASM = 'https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.22-rc.20250304/wasm'
 const MODEL = 'https://storage.googleapis.com/mediapipe-models/pose_landmarker/pose_landmarker_lite/float16/1/pose_landmarker_lite.task'
 type Pace = { work: number; rest: number; rounds: number }
 type SessionItem = { id: ExerciseId; reason: string; completed?: boolean }
+type LowerBodyFocus = 'Balanced' | 'Outer glute / abductor' | 'Inner thigh / adductor'
 const defaultPace: Pace = { work: 45, rest: 45, rounds: 4 }
 const defaultQueue: SessionItem[] = [
   { id: 'sumo-squat', reason: 'Matches your squat preference and no-equipment setup.' },
@@ -16,12 +18,37 @@ const defaultQueue: SessionItem[] = [
   { id: 'shoulder-press', reason: 'Uses your preferred overhead dumbbell movement.' },
   { id: 'tricep-extension', reason: 'Adds a floor or standing triceps option with simple setup.' },
 ]
+const focusPlans: Record<LowerBodyFocus, SessionItem[]> = {
+  Balanced: defaultQueue,
+  'Outer glute / abductor': [
+    { id: 'lateral-lunge', reason: 'Prioritizes side-to-side hip control for your selected outer-glute focus.' },
+    { id: 'curtsy-lunge', reason: 'Adds a unilateral glute-focused option with a comfortable range.' },
+    { id: 'romanian-deadlift', reason: 'Keeps your preferred hip-hinge pattern for posterior-chain work.' },
+    { id: 'glute-bridge', reason: 'Adds hip-extension work without loading through your wrists.' },
+    { id: 'forearm-plank', reason: 'Builds core stability while staying wrist-friendly.' },
+    { id: 'shoulder-press', reason: 'Keeps a balanced upper-body movement in the session.' },
+  ],
+  'Inner thigh / adductor': [
+    { id: 'sumo-squat', reason: 'Uses your preferred wide squat variation for an inner-thigh emphasis.' },
+    { id: 'lateral-lunge', reason: 'Adds controlled side-to-side lower-body work.' },
+    { id: 'romanian-deadlift', reason: 'Keeps your preferred hip-hinge pattern for posterior-chain work.' },
+    { id: 'glute-bridge', reason: 'Adds hip-extension work without loading through your wrists.' },
+    { id: 'russian-twist', reason: 'Adds a floor-based rotational core option.' },
+    { id: 'tricep-extension', reason: 'Keeps a simple upper-body option in the plan.' },
+  ],
+}
+const focusDescriptions: Record<LowerBodyFocus, string> = {
+  Balanced: 'A balanced lower-body session across squat, hinge, and bridge patterns.',
+  'Outer glute / abductor': 'Favors lateral and unilateral movement patterns for outer-hip emphasis.',
+  'Inner thigh / adductor': 'Favors a wider squat stance and controlled lateral work for inner-thigh emphasis.',
+}
 const format = (seconds: number) => `${Math.floor(seconds / 60)}:${String(seconds % 60).padStart(2, '0')}`
 
 export default function App() {
   const saved = typeof window === 'undefined' ? null : localStorage.getItem('formwise-pace')
   const [pace, setPace] = useState<Pace>(saved ? JSON.parse(saved) : defaultPace)
   const [queue, setQueue] = useState<SessionItem[]>(defaultQueue)
+  const [lowerBodyFocus, setLowerBodyFocus] = useState<LowerBodyFocus>('Balanced')
   const [screen, setScreen] = useState<'today' | 'active'>('today')
   const [index, setIndex] = useState(0)
   const [round, setRound] = useState(1)
@@ -42,6 +69,7 @@ export default function App() {
   const canvas = useRef<HTMLCanvasElement>(null)
   const landmarker = useRef<PoseLandmarker | null>(null)
   const frame = useRef<number | null>(null)
+  const audioContext = useRef<AudioContext | null>(null)
   const current = queue[index]
   const currentExercise = current ? findExercise(current.id) : null
   const estimatedMinutes = Math.round(queue.length * pace.rounds * (pace.work + pace.rest) / 60)
@@ -54,19 +82,21 @@ export default function App() {
 
   useEffect(() => {
     if (screen !== 'active' || paused || finished) return
-    const timer = window.setInterval(() => setSeconds((value) => value - 1), 1000)
+    const timer = window.setInterval(() => { playTone(520, .035); setSeconds((value) => value - 1) }, 1000)
     return () => window.clearInterval(timer)
   }, [screen, paused, finished])
 
   useEffect(() => {
     if (seconds >= 0 || finished) return
-    if (phase === 'work') { setPhase('rest'); setSeconds(pace.rest); return }
-    if (round < sessionRounds) { setRound((value) => value + 1); setPhase('work'); setSeconds(pace.work); return }
+    if (phase === 'work') { playPattern('rest'); setPhase('rest'); setSeconds(pace.rest); return }
+    if (round < sessionRounds) { playPattern('work'); setRound((value) => value + 1); setPhase('work'); setSeconds(pace.work); return }
     const nextIndex = index + 1
     if (nextIndex < queue.length && !momentum) {
+      playPattern('next')
       setQueue((items) => items.map((item, itemIndex) => itemIndex === index ? { ...item, completed: true } : item))
       setIndex(nextIndex); setRound(1); setPhase('work'); setSeconds(pace.work)
     } else {
+      playPattern('complete')
       setQueue((items) => items.map((item, itemIndex) => itemIndex === index ? { ...item, completed: true } : item))
       setFinished(true); setPaused(true)
     }
@@ -75,9 +105,42 @@ export default function App() {
   useEffect(() => () => stopCamera(), [])
 
   function begin(startSmall = false) {
+    prepareAudio(); playPattern('start')
     setMomentum(startSmall)
     setQueue((items) => startSmall ? [{ ...items[0], completed: false }] : items.map((item) => ({ ...item, completed: false })))
     setIndex(0); setRound(1); setSessionRounds(startSmall ? 3 : pace.rounds); setPhase('work'); setSeconds(pace.work); setFinished(false); setPaused(false); setScreen('active')
+  }
+  function chooseLowerBodyFocus(focus: LowerBodyFocus) {
+    setLowerBodyFocus(focus)
+    setQueue(focusPlans[focus].map((item) => ({ ...item, completed: false })))
+  }
+  function useCameraGuidedSquat() {
+    setQueue((items) => items.map((item, itemIndex) => itemIndex === 0 ? { id: 'bodyweight-squat', reason: 'Selected for camera-supported setup and landmark-based squat cues.' } : item))
+  }
+  function prepareAudio() {
+    const Audio = window.AudioContext || (window as typeof window & { webkitAudioContext?: typeof AudioContext }).webkitAudioContext
+    if (!Audio) return
+    if (!audioContext.current) audioContext.current = new Audio()
+    if (audioContext.current.state === 'suspended') void audioContext.current.resume()
+  }
+  function playTone(frequency: number, duration = .09, delay = 0) {
+    const context = audioContext.current
+    if (!context) return
+    const oscillator = context.createOscillator(), gain = context.createGain()
+    oscillator.type = 'sine'; oscillator.frequency.value = frequency
+    gain.gain.setValueAtTime(.0001, context.currentTime + delay)
+    gain.gain.exponentialRampToValueAtTime(.055, context.currentTime + delay + .01)
+    gain.gain.exponentialRampToValueAtTime(.0001, context.currentTime + delay + duration)
+    oscillator.connect(gain).connect(context.destination)
+    oscillator.start(context.currentTime + delay); oscillator.stop(context.currentTime + delay + duration + .02)
+  }
+  function playPattern(signal: 'start' | 'work' | 'rest' | 'next' | 'complete') {
+    if (!audioContext.current) return
+    if (signal === 'rest') playTone(300, .16)
+    if (signal === 'work') { playTone(620, .1); playTone(780, .12, .14) }
+    if (signal === 'next') { playTone(520, .1); playTone(700, .12, .14) }
+    if (signal === 'start') { playTone(620, .1); playTone(780, .1, .14); playTone(940, .14, .28) }
+    if (signal === 'complete') { playTone(520, .1); playTone(660, .1, .14); playTone(880, .18, .28) }
   }
   function skipCurrent() {
     if (index === queue.length - 1) { setFinished(true); setPaused(true); return }
@@ -140,11 +203,13 @@ export default function App() {
     <section className="active-session" aria-live="polite">
       <div className="active-top"><span>Exercise {index + 1} of {queue.length}</span><button className="text-button" onClick={() => { stopCamera(); setScreen('today'); setPaused(true) }}>Exit session</button></div>
       {finished ? <div className="finish-card"><p className="eyebrow">SESSION COMPLETE</p><h1>{momentum ? 'You started. That matters.' : 'Great work today.'}</h1><p>{momentum ? 'Want to build on your five-minute start?' : 'Your completed exercises will inform your next recommendation.'}</p>{momentum && <button onClick={() => { setMomentum(false); setQueue(defaultQueue); setIndex(0); setRound(1); setSessionRounds(pace.rounds); setPhase('work'); setSeconds(pace.work); setFinished(false); setPaused(false) }}>Continue with today’s plan</button>}<button className="secondary" onClick={() => setScreen('today')}>Finish here</button></div> : <>
-        <p className={`phase ${phase}`}>{phase}</p><div className="timer">{format(Math.max(0, seconds))}</div><p className="round">Round {round} of {sessionRounds}</p>
+        <div className="round-visual" aria-label={`Round ${round} of ${sessionRounds}`}><div><span>ROUND</span><strong>{round} <i>of</i> {sessionRounds}</strong></div><ol className="round-track">{Array.from({ length: sessionRounds }, (_, roundIndex) => <li key={roundIndex} className={roundIndex + 1 < round ? 'completed' : roundIndex + 1 === round ? 'current' : ''} aria-label={`Round ${roundIndex + 1}${roundIndex + 1 === round ? ', current' : roundIndex + 1 < round ? ', complete' : ', upcoming'}`}>{roundIndex + 1}</li>)}</ol></div>
+        <div className={`timer-stage ${phase}`}><p className={`phase ${phase}`}>{phase === 'work' ? 'Work interval' : 'Rest interval'}</p><div className="timer">{format(Math.max(0, seconds))}</div><p className="timer-note">{phase === 'work' ? 'A low tick marks each second. A rising tone starts your next work block.' : 'Rest. A bright double tone tells you when work resumes.'}</p></div>
         <h1>{currentExercise.name}</h1><p className="setup-copy">{currentExercise.setup}</p>
         <button onClick={() => setPaused((value) => !value)}>{paused ? 'Resume' : 'Pause'}</button>
         <div className="active-actions"><button className="secondary" onClick={() => setShowPace(true)}>Pace</button><button className="secondary" onClick={() => setSwapIndex(index)}>Swap</button><button className="secondary" onClick={skipCurrent}>Skip</button></div>
-        {currentExercise.cameraSupported && <section className="camera-card"><div><b>Optional camera coaching</b><p>Set up a full-body view before live cues.</p></div><button className="secondary" onClick={cameraOpen ? stopCamera : startCamera} disabled={loading}>{loading ? 'Starting…' : cameraOpen ? 'Stop camera' : 'Start live coach'}</button></section>}
+        <section className="muscle-focus"><b>Intended training emphasis</b><p>{currentExercise.focus}. Camera coaching can guide visible setup and movement cues, but cannot measure exact muscle activation.</p></section>
+        {currentExercise.cameraSupported ? <section className="camera-card"><div><b>Optional camera coaching</b><p>Set up a full-body view before live cues. The coach will flag visible setup, posture, range, and tempo cues.</p></div><button className="secondary" onClick={cameraOpen ? stopCamera : startCamera} disabled={loading}>{loading ? 'Starting…' : cameraOpen ? 'Stop camera' : 'Start live coach'}</button></section> : <section className="camera-card"><div><b>Camera coaching is available for squat, push-up, and split squat.</b><p>Swap to a supported movement for confidence-aware setup and form cues.</p></div><button className="secondary" onClick={() => { setQueue((items) => items.map((item, itemIndex) => itemIndex === index ? { ...item, id: 'bodyweight-squat', reason: 'Selected for camera-supported setup and landmark-based squat cues.' } : item)); setCameraOpen(false) }}>Use camera-guided squat</button></section>}
         {cameraOpen && <section className="camera-panel"><div className="stage"><video ref={video} playsInline muted /><canvas ref={canvas} aria-label="Pose overlay" /></div><p className="status">{cameraStatus}</p>{cues.slice(0, 1).map((cue, cueIndex) => <p key={cueIndex} className={`cue ${cue.level}`}>{cue.text}</p>)}</section>}
         <p className="safety">Stop if you feel pain. This is general fitness guidance, not medical advice.</p><p className="up-next">Up next: {queue[index + 1] ? findExercise(queue[index + 1].id).name : 'Finish session'}</p>
       </>}
@@ -156,13 +221,22 @@ export default function App() {
   return <main className="app-shell">
     <header><span className="brand">FORMWISE</span><span className="privacy-badge">Private on this device</span></header>
     <section className="today-hero"><div><p className="eyebrow">TODAY</p><h1>Your lower-body session is ready.</h1><p>Built around your squat, core, and dumbbell preferences—without wrist-loaded exercises.</p></div><button className="summary-pill" onClick={() => setShowPace(true)}>~{estimatedMinutes} min <i>·</i> {pace.work}s work <i>·</i> {pace.rest}s rest <i>·</i> {pace.rounds} rounds</button></section>
-    <section className="today-grid"><div><div className="start-card"><div><p className="eyebrow">READY WHEN YOU ARE</p><h2>Six movements, one clear plan.</h2><p>Adjust only if you want to. Your pacing is ready to go.</p></div><button onClick={() => begin()}>Start session</button><button className="text-button start-small" onClick={() => begin(true)}>Just 5 minutes</button></div><div className="why"><b>Why this plan</b><span>It favors your selected lower-body, core, and dumbbell movements while keeping wrist-friendly options first.</span></div></div>
-      <section className="queue"><div className="section-heading"><div><p className="eyebrow">TODAY’S LIST</p><h2>What’s next</h2></div><span>{queue.length} exercises</span></div>{queue.map((item, itemIndex) => { const exercise = findExercise(item.id); return <article className="queue-item" key={`${item.id}-${itemIndex}`}><span className="queue-number">{itemIndex + 1}</span><div><h3>{exercise.name}</h3><p>{exercise.category} · {pace.rounds} rounds · {pace.work}s / {pace.rest}s</p><small>{item.reason}</small></div><button className="secondary swap-button" onClick={() => setSwapIndex(itemIndex)}>Swap</button></article> })}</section>
+    <section className="today-grid"><div><div className="focus-card"><p className="eyebrow">LOWER-BODY EMPHASIS</p><h2>What do you want to emphasize?</h2><div className="focus-options">{(Object.keys(focusPlans) as LowerBodyFocus[]).map((focus) => <button key={focus} className={lowerBodyFocus === focus ? '' : 'secondary'} onClick={() => chooseLowerBodyFocus(focus)}>{focus}</button>)}</div><p>{focusDescriptions[lowerBodyFocus]}</p></div><div className="start-card"><div><p className="eyebrow">READY WHEN YOU ARE</p><h2>Six movements, one clear plan.</h2><p>Adjust only if you want to. Your pacing is ready to go.</p></div><button onClick={() => begin()}>Start session</button><button className="text-button start-small" onClick={() => begin(true)}>Just 5 minutes</button></div><div className="why"><b>Need a camera form check?</b><span>Switch the first movement to a camera-supported squat, then launch live coaching during the interval.</span><button className="secondary" onClick={useCameraGuidedSquat}>Use camera-guided squat</button></div></div>
+      <section className="queue"><div className="section-heading"><div><p className="eyebrow">TODAY’S LIST</p><h2>What’s next</h2></div><span>{queue.length} exercises</span></div>{queue.map((item, itemIndex) => { const exercise = findExercise(item.id); return <article className="queue-item" key={`${item.id}-${itemIndex}`}><ExerciseVisual slot={visualSlot(exercise.id)} label={exercise.name} number={itemIndex + 1} /><div><h3>{exercise.name}</h3><p>{exercise.category} · {pace.rounds} rounds · {pace.work}s / {pace.rest}s</p><small>{item.reason}</small></div><button className="secondary swap-button" onClick={() => setSwapIndex(itemIndex)}>Swap</button></article> })}</section>
     </section>
     {showPace && <PacePanel pace={pace} onApply={applyPace} onClose={() => setShowPace(false)} />}
     {swapIndex !== null && <SwapPanel source={findExercise(queue[swapIndex].id).name} reason={swapReason} setReason={setSwapReason} alternatives={alternatives} onChoose={replace} onClose={() => setSwapIndex(null)} />}
     <footer>Not medical advice. Video is never recorded or uploaded; camera coaching is optional and limited to supported exercises.</footer>
   </main>
+}
+
+function visualSlot(id: ExerciseId) {
+  return ({ 'bodyweight-squat': 0, 'sumo-squat': 0, 'lateral-lunge': 0, 'curtsy-lunge': 0, 'romanian-deadlift': 1, 'glute-bridge': 2, 'forearm-plank': 3, 'russian-twist': 3, 'push-up': 3, 'split-squat': 0, 'shoulder-press': 4, 'tricep-extension': 5 } as Record<ExerciseId, number>)[id]
+}
+
+function ExerciseVisual({ slot, label, number }: { slot: number; label: string; number: number }) {
+  const x = (slot % 3) * 50, y = Math.floor(slot / 3) * 100
+  return <div className="exercise-visual" role="img" aria-label={`${label} cartoon exercise guide`} style={{ backgroundImage: `url(${exerciseGuide})`, backgroundPosition: `${x}% ${y}%` }}><span>{number}</span></div>
 }
 
 function PacePanel({ pace, onApply, onClose }: { pace: Pace; onApply: (pace: Pace, save?: boolean) => void; onClose: () => void }) {

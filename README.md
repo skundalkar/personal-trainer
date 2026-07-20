@@ -16,6 +16,8 @@ Open the local URL over `localhost`, grant camera access, choose an exercise, an
 - Ready-to-start Today plan with six personalized, wrist-friendly exercises
 - Adjustable work/rest intervals and rounds, including saved pacing defaults
 - A five-minute momentum start and an editable exercise swap flow
+- Cartoon movement guides, prominent round progress, and distinct interval audio cues
+- Lower-body emphasis options for balanced, outer-glute/abductor, or inner-thigh/adductor training
 - Bodyweight squat, push-up, and split-squat exercise setup
 - Live 2D pose overlay
 - Lightweight, explainable landmark rules for basic cues
