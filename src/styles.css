@@ -58,6 +58,7 @@ p { color: #b6c2dd; line-height: 1.5; }
 .exercise-visual.complete { border-color: #63e6be; }
 .exercise-visual.complete span { background: #63e6be; color: #07271f; }
 .session-identity small { display: block; margin-top: 7px; color: #b6c2dd; font-size: .82rem; line-height: 1.42; }
+.identity-title { display: flex; align-items: center; justify-content: space-between; gap: 10px; }.identity-title h3 { margin: 0 0 5px; }.identity-actions { display: flex; align-items: center; gap: 4px; }.reorder-arrow { display: grid; width: 27px; min-height: 27px; place-items: center; border: 1px solid #3a4c6c; border-radius: 7px; padding: 0; background: #202b43; color: #dbe4ff; font-size: .95rem; }.reorder-arrow:disabled { opacity: .3; }.drag-handle { color: #91a7ff; font-size: 1.25rem; font-weight: 900; cursor: grab; }.reorderable { cursor: grab; }.reorderable:active { cursor: grabbing; }.reorder-notice { margin: 0; padding: 10px 23px; border-top: 1px solid #2c3c5b; color: #b6c2dd; font-size: .8rem; }
 .session-progress { display: grid; grid-template-columns: auto 1fr; align-items: center; gap: 2px 9px; min-width: 135px; text-align: left; }
 .session-progress b { grid-column: 1 / -1; color: #91a7ff; font-size: .7rem; letter-spacing: .11em; text-transform: uppercase; }
 .session-progress b.work { color: #63e6be; }.session-progress b.rest { color: #ffcc75; }

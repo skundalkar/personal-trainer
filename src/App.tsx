@@ -10,6 +10,10 @@ const MODEL = 'https://storage.googleapis.com/mediapipe-models/pose_landmarker/p
 type Pace = { work: number; rest: number; rounds: number }
 type SessionItem = { id: ExerciseId; reason: string; completed?: boolean; skipped?: boolean }
 const defaultPace: Pace = { work: 45, rest: 45, rounds: 4 }
+const coreExerciseIds = new Set(['forearm-plank', 'russian-twist', 'dead-bug', 'side-plank', 'reverse-crunch', 'hollow-hold', 'bird-dog', 'seated-knee-tuck'])
+const hamstringExerciseIds = new Set(['romanian-deadlift', 'good-morning', 'single-leg-rdl', 'hamstring-walkout', 'glute-bridge', 'hip-thrust', 'sliding-leg-curl'])
+const lowerBodyExerciseIds = new Set(['bodyweight-squat', 'sumo-squat', 'lateral-lunge', 'curtsy-lunge', 'split-squat', 'reverse-lunge', 'step-up', 'wall-sit', 'goblet-squat'])
+const upperBodyExerciseIds = new Set(['push-up', 'shoulder-press', 'tricep-extension', 'floor-press', 'lateral-raise', 'bent-over-row', 'hammer-curl'])
 const defaultQueue: SessionItem[] = [
   { id: 'sumo-squat', reason: 'Matches your squat preference and no-equipment setup.' },
   { id: 'romanian-deadlift', reason: 'Builds your preferred hip-hinge work with a clear progression.' },
@@ -19,6 +23,10 @@ const defaultQueue: SessionItem[] = [
   { id: 'tricep-extension', reason: 'Adds a floor or standing triceps option with simple setup.' },
 ]
 const format = (seconds: number) => `${Math.floor(seconds / 60)}:${String(seconds % 60).padStart(2, '0')}`
+const swapPool = (id: ExerciseId) => {
+  const group = coreExerciseIds.has(id) ? coreExerciseIds : hamstringExerciseIds.has(id) ? hamstringExerciseIds : lowerBodyExerciseIds.has(id) ? lowerBodyExerciseIds : upperBodyExerciseIds
+  return exercises.filter((exercise) => exercise.id !== id && group.has(exercise.id)).slice(0, 8)
+}
 
 export default function App() {
   const saved = typeof window === 'undefined' ? null : localStorage.getItem('formwise-pace')
@@ -35,7 +43,8 @@ export default function App() {
   const [finished, setFinished] = useState(false)
   const [showPace, setShowPace] = useState(false)
   const [swapIndex, setSwapIndex] = useState<number | null>(null)
-  const [swapReason, setSwapReason] = useState('')
+  const [draggedIndex, setDraggedIndex] = useState<number | null>(null)
+  const [reorderNotice, setReorderNotice] = useState('')
   const [cameraOpen, setCameraOpen] = useState(false)
   const [loading, setLoading] = useState(false)
   const [cameraStatus, setCameraStatus] = useState('Camera coaching is optional and processed on this device.')
@@ -50,10 +59,8 @@ export default function App() {
   const estimatedMinutes = Math.round(queue.length * pace.rounds * (pace.work + pace.rest) / 60)
   const alternatives = useMemo(() => {
     if (swapIndex === null) return []
-    const source = queue[swapIndex]
-    const filtered = exercises.filter((exercise) => exercise.id !== source.id && (swapReason === 'Wrist discomfort' ? exercise.wristFriendly : true))
-    return filtered.slice(0, 3)
-  }, [queue, swapIndex, swapReason])
+    return swapPool(queue[swapIndex].id)
+  }, [queue, swapIndex])
 
   useEffect(() => {
     if (screen !== 'active' || paused || finished) return
@@ -118,7 +125,8 @@ export default function App() {
     setQueue((items) => items.map((item, itemIndex) => itemIndex === index ? { ...item, skipped: true } : item))
     setIndex((value) => value + 1); setRound(1); setPhase('work'); setSeconds(pace.work)
   }
-  function skipRound() {
+  function skipInterval() {
+    if (phase === 'work') { playPattern('rest'); setPhase('rest'); setSeconds(pace.rest); return }
     if (round >= sessionRounds) {
       const nextIndex = index + 1
       setQueue((items) => items.map((item, itemIndex) => itemIndex === index ? { ...item, completed: true } : item))
@@ -128,6 +136,11 @@ export default function App() {
     setRound((value) => value + 1); setPhase('work'); setSeconds(pace.work); playPattern('work')
   }
   function openPace() { setPaused(true); setShowPace(true) }
+  function moveExercise(from: number, to: number) {
+    if (from === to || to < 0 || to >= queue.length) return
+    setQueue((items) => { const next = [...items], [moved] = next.splice(from, 1); next.splice(to, 0, moved); return next })
+    setReorderNotice(`${findExercise(queue[from].id).name} moved to position ${to + 1} of ${queue.length}.`)
+  }
   function applyPace(next: Pace, save = false) {
     setPace(next)
     setSessionRounds(next.rounds)
@@ -140,9 +153,9 @@ export default function App() {
     const chosen = findExercise(exercise)
     setQueue((items) => items.map((item, itemIndex) => itemIndex === swapIndex ? {
       ...item, id: exercise,
-      reason: swapReason === 'Wrist discomfort' ? `${chosen.name} avoids loading through your hands. Trade-off: it shifts the training focus.` : `A compatible alternative for today’s plan.`,
+      reason: `${chosen.name} is a new ${chosen.category.toLowerCase()} option for today’s plan.`,
     } : item))
-    setSwapIndex(null); setSwapReason('')
+    setSwapIndex(null)
   }
   async function startCamera() {
     try {
@@ -181,23 +194,23 @@ export default function App() {
 
   if (screen === 'active' && currentExercise) return <main className="app-shell session-shell">
     <header><span className="brand">FORMWISE</span><button className="text-button" onClick={() => { stopCamera(); setScreen('today'); setPaused(true) }}>Exit session</button></header>
-    <section className="queue session-queue" aria-live="polite"><div className="section-heading session-heading"><div><p className="eyebrow">TODAY’S SESSION</p><h2>{finished ? 'Session complete' : momentum ? 'Five-minute start' : 'In progress'}</h2><span>~{estimatedMinutes} min · {pace.work}s on / {pace.rest}s off</span></div>{!finished && <button onClick={() => setPaused((value) => !value)}>{paused ? 'Resume session' : 'Pause session'}</button>}</div>{queue.map((item, itemIndex) => { const exercise = findExercise(item.id), active = itemIndex === index && !finished, done = Boolean(item.completed), skipped = Boolean(item.skipped); return <article className={`queue-item session-row ${active ? 'is-active' : ''} ${done ? 'is-complete' : ''} ${skipped ? 'is-skipped' : ''}`} key={`${item.id}-${itemIndex}`}><ExerciseVisual exercise={exercise} number={itemIndex + 1} status={skipped ? 'skipped' : done ? 'complete' : active ? 'active' : 'queued'} /><div className="session-identity"><h3>{exercise.name}</h3><p>{exercise.category} · {sessionRounds} rounds · {pace.work}s / {pace.rest}s</p>{active && <small>{exercise.setup}</small>}</div><div className="session-progress">{skipped ? <><b>Skipped</b><strong>—</strong><small>Exercise skipped</small></> : done ? <><b>Complete</b><strong>✓</strong><small>{sessionRounds} of {sessionRounds} rounds</small></> : active ? <div className={`interval-display ${phase}`}><span aria-hidden="true">{phase === 'work' ? '▶' : 'Ⅱ'}</span><div><b>{phase}</b><strong>{format(Math.max(0, seconds))}</strong><small>Round {round} of {sessionRounds}</small></div></div> : <><b>Queued</b><strong>{pace.work}s</strong><small>{sessionRounds} rounds planned</small></>}</div>{active ? <><div className="row-actions"><button className="secondary" onClick={openPace}>Pace</button><button className="secondary" onClick={() => setSwapIndex(index)}>Swap</button><button className="secondary" onClick={skipRound}>Skip round</button><button className="text-button" onClick={skipCurrent}>Skip exercise</button></div><RoundTimeline rounds={sessionRounds} currentRound={round} phase={phase} seconds={Math.max(0, seconds)} /></> : !done && !skipped && <button className="secondary swap-button" onClick={() => setSwapIndex(itemIndex)}>Swap</button>}</article> })}{finished && <div className="session-finish"><b>{momentum ? 'Five minutes complete.' : 'All done.'}</b><span>Completion is saved as a positive preference signal.</span><button className="secondary" onClick={() => setScreen('today')}>Back to Today</button></div>}</section>
-    {showPace && <PacePanel pace={pace} onApply={applyPace} onClose={() => setShowPace(false)} />}{swapIndex !== null && <SwapPanel source={findExercise(queue[swapIndex].id).name} reason={swapReason} setReason={setSwapReason} alternatives={alternatives} onChoose={replace} onClose={() => setSwapIndex(null)} />}
+    <section className="queue session-queue" aria-live="polite"><div className="section-heading session-heading"><div><p className="eyebrow">TODAY’S SESSION</p><h2>{finished ? 'Session complete' : momentum ? 'Five-minute start' : 'In progress'}</h2><span>~{estimatedMinutes} min · {pace.work}s on / {pace.rest}s off</span></div>{!finished && <button onClick={() => setPaused((value) => !value)}>{paused ? 'Resume session' : 'Pause session'}</button>}</div>{queue.map((item, itemIndex) => { const exercise = findExercise(item.id), active = itemIndex === index && !finished, done = Boolean(item.completed), skipped = Boolean(item.skipped); return <article className={`queue-item session-row ${active ? 'is-active' : ''} ${done ? 'is-complete' : ''} ${skipped ? 'is-skipped' : ''}`} key={`${item.id}-${itemIndex}`}><ExerciseVisual exercise={exercise} number={itemIndex + 1} status={skipped ? 'skipped' : done ? 'complete' : active ? 'active' : 'queued'} /><div className="session-identity"><h3>{exercise.name}</h3><p>{exercise.category} · {sessionRounds} rounds · {pace.work}s / {pace.rest}s</p>{active && <small>{exercise.setup}</small>}</div><div className="session-progress">{skipped ? <><b>Skipped</b><strong>—</strong><small>Exercise skipped</small></> : done ? <><b>Complete</b><strong>✓</strong><small>{sessionRounds} of {sessionRounds} rounds</small></> : active ? <div className={`interval-display ${phase}`}><span aria-hidden="true">{phase === 'work' ? '▶' : 'Ⅱ'}</span><div><b>{phase}</b><strong>{format(Math.max(0, seconds))}</strong><small>Round {round} of {sessionRounds}</small></div></div> : <><b>Queued</b><strong>{pace.work}s</strong><small>{sessionRounds} rounds planned</small></>}</div>{active ? <><div className="row-actions"><button className="secondary" onClick={openPace}>Pace</button><button className="secondary" onClick={() => setSwapIndex(index)}>Swap</button><button className="secondary" onClick={skipInterval}>Skip</button><button className="text-button" onClick={skipCurrent}>Skip exercise</button></div><RoundTimeline rounds={sessionRounds} currentRound={round} phase={phase} seconds={Math.max(0, seconds)} /></> : !done && !skipped && <button className="secondary swap-button" onClick={() => setSwapIndex(itemIndex)}>Swap</button>}</article> })}{finished && <div className="session-finish"><b>{momentum ? 'Five minutes complete.' : 'All done.'}</b><span>Completion is saved as a positive preference signal.</span><button className="secondary" onClick={() => setScreen('today')}>Back to Today</button></div>}</section>
+    {showPace && <PacePanel pace={pace} onApply={applyPace} onClose={() => setShowPace(false)} />}{swapIndex !== null && <SwapPanel source={findExercise(queue[swapIndex].id).name} alternatives={alternatives} onChoose={replace} onClose={() => setSwapIndex(null)} />}
   </main>
 
   return <main className="app-shell">
     <header><span className="brand">FORMWISE</span><span className="privacy-badge">Private on this device</span></header>
     <section className="today-hero"><div><p className="eyebrow">TODAY</p><h1>Your lower-body session is ready.</h1><p>Built around your squat, core, and dumbbell preferences—without wrist-loaded exercises.</p></div><button className="summary-pill" onClick={() => setShowPace(true)}>~{estimatedMinutes} min <i>·</i> {pace.work}s work <i>·</i> {pace.rest}s rest <i>·</i> {pace.rounds} rounds</button></section>
-    <section className="queue session-queue"><div className="section-heading session-heading"><div><p className="eyebrow">TODAY’S LIST</p><h2>What’s next</h2><span>{queue.length} exercises · ~{estimatedMinutes} min planned</span></div><div className="header-actions"><button className="secondary" onClick={() => setShowPace(true)}>{pace.work}s / {pace.rest}s · {pace.rounds} rounds</button><button onClick={() => begin()}>Start session</button><button className="text-button" onClick={() => begin(true)}>Just 5 min</button></div></div>{queue.map((item, itemIndex) => { const exercise = findExercise(item.id); return <article className="queue-item session-row" key={`${item.id}-${itemIndex}`}><ExerciseVisual exercise={exercise} number={itemIndex + 1} status="queued" /><div className="session-identity"><h3>{exercise.name}</h3><p>{exercise.category} · {pace.rounds} rounds · {pace.work}s / {pace.rest}s</p><small>{item.reason}</small></div><div className="session-progress"><b>Queued</b><strong>{pace.work}s</strong><small>{pace.rounds} rounds planned</small><div className="mini-rounds">{Array.from({ length: pace.rounds }, (_, roundIndex) => <i key={roundIndex} />)}</div></div><button className="secondary swap-button" onClick={() => setSwapIndex(itemIndex)}>Swap</button></article> })}</section>
+    <section className="queue session-queue"><div className="section-heading session-heading"><div><p className="eyebrow">TODAY’S LIST</p><h2>What’s next</h2><span>{queue.length} exercises · ~{estimatedMinutes} min planned</span></div><div className="header-actions"><button className="secondary" onClick={() => setShowPace(true)}>{pace.work}s / {pace.rest}s · {pace.rounds} rounds</button><button onClick={() => begin()}>Start session</button><button className="text-button" onClick={() => begin(true)}>Just 5 min</button></div></div><p className="reorder-notice" aria-live="polite">{reorderNotice || 'Drag a card or use its arrows to reorder your session.'}</p>{queue.map((item, itemIndex) => { const exercise = findExercise(item.id); return <article className="queue-item session-row reorderable" draggable onDragStart={() => setDraggedIndex(itemIndex)} onDragOver={(event) => event.preventDefault()} onDrop={() => { if (draggedIndex !== null) moveExercise(draggedIndex, itemIndex); setDraggedIndex(null) }} onDragEnd={() => setDraggedIndex(null)} key={`${item.id}-${itemIndex}`}><ExerciseVisual exercise={exercise} number={itemIndex + 1} status="queued" /><div className="session-identity"><div className="identity-title"><h3>{exercise.name}</h3><div className="identity-actions"><button className="reorder-arrow" aria-label={`Move ${exercise.name} up`} disabled={itemIndex === 0} onClick={() => moveExercise(itemIndex, itemIndex - 1)}>↑</button><button className="reorder-arrow" aria-label={`Move ${exercise.name} down`} disabled={itemIndex === queue.length - 1} onClick={() => moveExercise(itemIndex, itemIndex + 1)}>↓</button><span className="drag-handle" aria-label={`Drag to reorder ${exercise.name}`}>↕</span></div></div><p>{exercise.category} · {pace.rounds} rounds · {pace.work}s / {pace.rest}s</p><small>{item.reason}</small></div><div className="session-progress"><b>Queued</b><strong>{pace.work}s</strong><small>{pace.rounds} rounds planned</small><div className="mini-rounds">{Array.from({ length: pace.rounds }, (_, roundIndex) => <i key={roundIndex} />)}</div></div><button className="secondary swap-button" onClick={() => setSwapIndex(itemIndex)}>Swap</button></article> })}</section>
     {showPace && <PacePanel pace={pace} onApply={applyPace} onClose={() => setShowPace(false)} />}
-    {swapIndex !== null && <SwapPanel source={findExercise(queue[swapIndex].id).name} reason={swapReason} setReason={setSwapReason} alternatives={alternatives} onChoose={replace} onClose={() => setSwapIndex(null)} />}
+    {swapIndex !== null && <SwapPanel source={findExercise(queue[swapIndex].id).name} alternatives={alternatives} onChoose={replace} onClose={() => setSwapIndex(null)} />}
     <footer>Not medical advice. Video is never recorded or uploaded; camera coaching is optional and limited to supported exercises.</footer>
   </main>
 }
 
 function ExerciseVisual({ exercise, number, status = 'queued' }: { exercise: ReturnType<typeof findExercise>; number: number; status?: 'queued' | 'active' | 'complete' | 'skipped' }) {
   const lunge = exercise.id === 'lateral-lunge' || exercise.id === 'curtsy-lunge'
-  const guideSlot = exercise.id === 'lateral-lunge' ? 0 : exercise.id === 'curtsy-lunge' ? 1 : ({ 'bodyweight-squat': 0, 'sumo-squat': 0, 'romanian-deadlift': 1, 'glute-bridge': 2, 'forearm-plank': 3, 'russian-twist': 3, 'push-up': 3, 'split-squat': 0, 'shoulder-press': 4, 'tricep-extension': 5 } as Record<Exclude<ExerciseId, 'lateral-lunge' | 'curtsy-lunge'>, number>)[exercise.id as Exclude<ExerciseId, 'lateral-lunge' | 'curtsy-lunge'>]
+  const guideSlot = exercise.id === 'lateral-lunge' ? 0 : exercise.id === 'curtsy-lunge' ? 1 : (({ 'bodyweight-squat': 0, 'sumo-squat': 0, 'romanian-deadlift': 1, 'glute-bridge': 2, 'forearm-plank': 3, 'russian-twist': 3, 'push-up': 3, 'split-squat': 0, 'shoulder-press': 4, 'tricep-extension': 5 } as Record<string, number>)[exercise.id] ?? 0)
   const x = lunge ? guideSlot * 100 : (guideSlot % 3) * 50, y = lunge ? 0 : Math.floor(guideSlot / 3) * 100
   return <div className={`exercise-visual ${status}`} role="img" aria-label={`${exercise.name} cartoon exercise guide`} style={{ backgroundImage: `url(${lunge ? lungeGuide : exerciseGuide})`, backgroundPosition: `${x}% ${y}%`, backgroundSize: lunge ? '200% 100%' : '300% 200%' }}><span>{status === 'complete' ? '✓' : status === 'skipped' ? '—' : number}</span></div>
 }
@@ -219,6 +232,6 @@ function PacePanel({ pace, onApply, onClose }: { pace: Pace; onApply: (pace: Pac
   return <div className="modal-backdrop" role="presentation"><section className="sheet" role="dialog" aria-modal="true" aria-labelledby="pace-title"><button className="close" onClick={onClose} aria-label="Close pacing settings">×</button><p className="eyebrow">SESSION PACING</p><h2 id="pace-title">Keep it simple</h2><div className="presets"><button className="secondary" onClick={() => setDraft({ work: 30, rest: 30, rounds: 2 })}>Quick 5 min</button><button className="secondary" onClick={() => setDraft({ work: 45, rest: 45, rounds: 3 })}>Steady 27 min</button><button className="secondary" onClick={() => setDraft(defaultPace)}>Full 36 min</button></div><div className="steppers">{(['work', 'rest', 'rounds'] as const).map((key) => <div key={key}><span>{key === 'work' ? 'Work' : key === 'rest' ? 'Rest' : 'Rounds'}</span><button onClick={() => adjust(key, key === 'rounds' ? -1 : -15)} aria-label={`Decrease ${key}`}>−</button><b>{draft[key]}{key === 'rounds' ? '' : 's'}</b><button onClick={() => adjust(key, key === 'rounds' ? 1 : 15)} aria-label={`Increase ${key}`}>+</button></div>)}</div><label className="save-default"><input type="checkbox" checked={save} onChange={(event) => setSave(event.target.checked)} /> Save as my default</label><button onClick={() => onApply(draft, save)}>Apply pacing</button></section></div>
 }
 
-function SwapPanel({ source, reason, setReason, alternatives, onChoose, onClose }: { source: string; reason: string; setReason: (reason: string) => void; alternatives: ReturnType<typeof exercises.filter>; onChoose: (id: ExerciseId) => void; onClose: () => void }) {
-  return <div className="modal-backdrop" role="presentation"><section className="sheet" role="dialog" aria-modal="true" aria-labelledby="swap-title"><button className="close" onClick={onClose} aria-label="Close exercise alternatives">×</button><p className="eyebrow">EXERCISE SWAP</p><h2 id="swap-title">Replace {source}</h2><div className="reason-chips">{['Wrist discomfort', 'Too difficult today', 'No equipment', 'Show alternatives'].map((option) => <button key={option} className={reason === option ? '' : 'secondary'} onClick={() => setReason(option)}>{option}</button>)}</div><p className="safety">Stop if you feel pain. These are exercise options, not injury advice.</p><div className="alternatives">{alternatives.map((exercise) => <article key={exercise.id}><div><h3>{exercise.name}</h3><p>{exercise.focus}</p><small>{reason === 'Wrist discomfort' ? 'Avoids loading through the hands. Trade-off: shifts the training focus.' : 'Compatible with your plan and current setup.'}</small></div><button onClick={() => onChoose(exercise.id)}>Use this</button></article>)}</div></section></div>
+function SwapPanel({ source, alternatives, onChoose, onClose }: { source: string; alternatives: ReturnType<typeof exercises.filter>; onChoose: (id: ExerciseId) => void; onClose: () => void }) {
+  return <div className="modal-backdrop" role="presentation"><section className="sheet" role="dialog" aria-modal="true" aria-labelledby="swap-title"><button className="close" onClick={onClose} aria-label="Close exercise alternatives">×</button><p className="eyebrow">EXERCISE SWAP</p><h2 id="swap-title">Replace {source}</h2><p>Choose another movement from the same training area. You can swap again at any time.</p><div className="alternatives">{alternatives.map((exercise) => <article key={exercise.id}><div><h3>{exercise.name}</h3><p>{exercise.focus}</p><small>{exercise.category}</small></div><button onClick={() => onChoose(exercise.id)}>Use this</button></article>)}</div></section></div>
 }

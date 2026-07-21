@@ -1,7 +1,4 @@
-export type ExerciseId =
-  | 'bodyweight-squat' | 'sumo-squat' | 'lateral-lunge' | 'curtsy-lunge'
-  | 'romanian-deadlift' | 'glute-bridge' | 'forearm-plank' | 'russian-twist'
-  | 'push-up' | 'split-squat' | 'shoulder-press' | 'tricep-extension'
+export type ExerciseId = string
 
 export type Exercise = {
   id: ExerciseId
@@ -27,6 +24,27 @@ export const exercises: Exercise[] = [
   { id: 'split-squat', name: 'Split squat', category: 'Lower body', focus: 'Quads and glutes with unilateral control', setup: 'Use a stable staggered stance, keep the front foot flat, and lower vertically.', camera: 'Use a side view with your whole body in frame.', cameraSupported: true, wristFriendly: true },
   { id: 'shoulder-press', name: 'Dumbbell shoulder press', category: 'Upper body', focus: 'Shoulders and triceps', setup: 'Use a light, comfortable load and press smoothly without forcing range.', camera: 'Use a front or side view.', wristFriendly: true },
   { id: 'tricep-extension', name: 'Triceps extension', category: 'Upper body', focus: 'Triceps', setup: 'Use a comfortable load and keep the upper arm steady through a pain-free range.', camera: 'Use a side view.', wristFriendly: true },
+  { id: 'reverse-lunge', name: 'Reverse lunge', category: 'Quads & glutes', focus: 'Quads, glutes, and balance', setup: 'Step back softly and lower with a tall torso.', camera: 'Use a side view.', wristFriendly: true },
+  { id: 'step-up', name: 'Step-up', category: 'Quads & glutes', focus: 'Quads, glutes, and single-leg control', setup: 'Use a stable low platform and drive through the whole working foot.', camera: 'Use a side view.', wristFriendly: true },
+  { id: 'wall-sit', name: 'Wall sit', category: 'Quads', focus: 'Quads and trunk endurance', setup: 'Keep your back supported and choose a knee angle that feels comfortable.', camera: 'Use a side view.', wristFriendly: true },
+  { id: 'goblet-squat', name: 'Goblet squat', category: 'Quads & glutes', focus: 'Quads, glutes, and trunk control', setup: 'Hold one dumbbell close to your chest and keep the whole foot grounded.', camera: 'Use a side view.', wristFriendly: true },
+  { id: 'good-morning', name: 'Good morning', category: 'Hamstrings & glutes', focus: 'Hamstrings, glutes, and hip-hinge control', setup: 'Keep a soft knee and hinge through a comfortable range.', camera: 'Use a side view.', wristFriendly: true },
+  { id: 'single-leg-rdl', name: 'Single-leg RDL', category: 'Hamstrings & glutes', focus: 'Hamstrings, glutes, and balance', setup: 'Reach the free leg back and keep hips square as you hinge.', camera: 'Use a side view.', wristFriendly: true },
+  { id: 'hamstring-walkout', name: 'Hamstring walkout', category: 'Hamstrings & glutes', focus: 'Hamstrings and glutes', setup: 'Start from a bridge and slowly walk your heels away, only as far as control allows.', camera: 'Use a side view.', wristFriendly: true },
+  { id: 'hip-thrust', name: 'Hip thrust', category: 'Hamstrings & glutes', focus: 'Glutes and hamstrings', setup: 'Use a stable support and lift through the hips with a comfortable range.', camera: 'Use a side view.', wristFriendly: true },
+  { id: 'sliding-leg-curl', name: 'Sliding leg curl', category: 'Hamstrings & glutes', focus: 'Hamstrings and glutes', setup: 'From a bridge, slowly slide your heels away and back with control.', camera: 'Use a side view.', wristFriendly: true },
+  { id: 'kickstand-rdl', name: 'Kickstand RDL', category: 'Hamstrings & glutes', focus: 'Hamstrings, glutes, and balance support', setup: 'Keep most weight on the front foot while the back toes offer light balance.', camera: 'Use a side view.', wristFriendly: true },
+  { id: 'dead-bug', name: 'Dead bug', category: 'Core', focus: 'Deep core control and coordination', setup: 'Keep your back comfortable against the floor as you extend opposite limbs.', camera: 'Use a side view.', wristFriendly: true },
+  { id: 'side-plank', name: 'Side forearm plank', category: 'Core', focus: 'Obliques and lateral trunk stability', setup: 'Support yourself on a forearm and keep a long, comfortable line through your body.', camera: 'Use a side view.', wristFriendly: true },
+  { id: 'reverse-crunch', name: 'Reverse crunch', category: 'Core', focus: 'Lower-abdominal control', setup: 'Move slowly and keep the range comfortable rather than swinging your legs.', camera: 'Use a side view.', wristFriendly: true },
+  { id: 'hollow-hold', name: 'Hollow hold', category: 'Core', focus: 'Anterior core endurance', setup: 'Keep a gentle lower-back contact with the floor and bend knees if needed.', camera: 'Use a side view.', wristFriendly: true },
+  { id: 'bird-dog', name: 'Bird dog', category: 'Core', focus: 'Core stability and coordination', setup: 'Reach opposite arm and leg long while keeping the torso steady.', camera: 'Use a side view.', wristFriendly: true },
+  { id: 'seated-knee-tuck', name: 'Seated knee tuck', category: 'Core', focus: 'Lower abs and hip flexors', setup: 'Sit tall and move knees in with control.', camera: 'Use a side view.', wristFriendly: true },
+  { id: 'floor-press', name: 'Dumbbell floor press', category: 'Upper body', focus: 'Chest and triceps', setup: 'Lie with upper arms supported by the floor and press a comfortable load smoothly.', camera: 'Use a side view.', wristFriendly: true },
+  { id: 'lateral-raise', name: 'Dumbbell lateral raise', category: 'Upper body', focus: 'Side shoulders', setup: 'Lift light dumbbells with a soft elbow and keep the range comfortable.', camera: 'Use a front view.', wristFriendly: true },
+  { id: 'bent-over-row', name: 'Bent-over dumbbell row', category: 'Upper body', focus: 'Upper back and rhomboids', setup: 'Hinge comfortably and draw elbows back without shrugging.', camera: 'Use a side view.', wristFriendly: true },
+  { id: 'hammer-curl', name: 'Hammer curl', category: 'Upper body', focus: 'Biceps and forearms', setup: 'Keep elbows near your sides and move the dumbbells smoothly.', camera: 'Use a side view.', wristFriendly: true },
+  { id: 'incline-push-up', name: 'Incline push-up', category: 'Upper body', focus: 'Chest, shoulders, and triceps', setup: 'Use a stable elevated surface and keep a long line through your body.', camera: 'Use a side view.', wristFriendly: true },
 ]
 
 export const findExercise = (id: ExerciseId) => exercises.find((exercise) => exercise.id === id)!
