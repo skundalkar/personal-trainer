@@ -2,18 +2,20 @@ import { DrawingUtils, FilesetResolver, PoseLandmarker } from '@mediapipe/tasks-
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { coach, type Cue } from './formEngine'
 import { exercises, findExercise, type ExerciseId } from './exercises'
-import exerciseGuide from './assets/exercise-guide.png'
-import lungeGuide from './assets/lunge-guide.png'
+import lowerBodyGuide from './assets/lower-body-guide.png'
+import posteriorChainGuide from './assets/posterior-chain-guide.png'
+import coreGuide from './assets/core-guide.png'
+import upperBodyGuide from './assets/upper-body-guide.png'
 
 const WASM = 'https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.22-rc.20250304/wasm'
 const MODEL = 'https://storage.googleapis.com/mediapipe-models/pose_landmarker/pose_landmarker_lite/float16/1/pose_landmarker_lite.task'
 type Pace = { work: number; rest: number; rounds: number }
 type SessionItem = { id: ExerciseId; reason: string; completed?: boolean; skipped?: boolean }
 const defaultPace: Pace = { work: 45, rest: 45, rounds: 4 }
-const coreExerciseIds = new Set(['forearm-plank', 'russian-twist', 'dead-bug', 'side-plank', 'reverse-crunch', 'hollow-hold', 'bird-dog', 'seated-knee-tuck'])
-const hamstringExerciseIds = new Set(['romanian-deadlift', 'good-morning', 'single-leg-rdl', 'hamstring-walkout', 'glute-bridge', 'hip-thrust', 'sliding-leg-curl'])
+const coreExerciseIds = new Set(['forearm-plank', 'russian-twist', 'dead-bug', 'side-plank', 'reverse-crunch', 'hollow-hold', 'bird-dog', 'seated-knee-tuck', 'mountain-climber'])
+const hamstringExerciseIds = new Set(['romanian-deadlift', 'single-leg-rdl', 'kickstand-rdl', 'glute-bridge', 'hip-thrust', 'dumbbell-leg-curl', 'back-extension', 'calf-raise', 'bulgarian-split-squat'])
 const lowerBodyExerciseIds = new Set(['bodyweight-squat', 'sumo-squat', 'lateral-lunge', 'curtsy-lunge', 'split-squat', 'reverse-lunge', 'step-up', 'wall-sit', 'goblet-squat'])
-const upperBodyExerciseIds = new Set(['push-up', 'shoulder-press', 'tricep-extension', 'floor-press', 'lateral-raise', 'bent-over-row', 'hammer-curl'])
+const upperBodyExerciseIds = new Set(['push-up', 'incline-push-up', 'shoulder-press', 'tricep-extension', 'floor-press', 'lateral-raise', 'bent-over-row', 'hammer-curl', 'front-raise'])
 const defaultQueue: SessionItem[] = [
   { id: 'sumo-squat', reason: 'Matches your squat preference and no-equipment setup.' },
   { id: 'romanian-deadlift', reason: 'Builds your preferred hip-hinge work with a clear progression.' },
@@ -209,10 +211,9 @@ export default function App() {
 }
 
 function ExerciseVisual({ exercise, number, status = 'queued' }: { exercise: ReturnType<typeof findExercise>; number: number; status?: 'queued' | 'active' | 'complete' | 'skipped' }) {
-  const lunge = exercise.id === 'lateral-lunge' || exercise.id === 'curtsy-lunge'
-  const guideSlot = exercise.id === 'lateral-lunge' ? 0 : exercise.id === 'curtsy-lunge' ? 1 : (({ 'bodyweight-squat': 0, 'sumo-squat': 0, 'romanian-deadlift': 1, 'glute-bridge': 2, 'forearm-plank': 3, 'russian-twist': 3, 'push-up': 3, 'split-squat': 0, 'shoulder-press': 4, 'tricep-extension': 5 } as Record<string, number>)[exercise.id] ?? 0)
-  const x = lunge ? guideSlot * 100 : (guideSlot % 3) * 50, y = lunge ? 0 : Math.floor(guideSlot / 3) * 100
-  return <div className={`exercise-visual ${status}`} role="img" aria-label={`${exercise.name} cartoon exercise guide`} style={{ backgroundImage: `url(${lunge ? lungeGuide : exerciseGuide})`, backgroundPosition: `${x}% ${y}%`, backgroundSize: lunge ? '200% 100%' : '300% 200%' }}><span>{status === 'complete' ? '✓' : status === 'skipped' ? '—' : number}</span></div>
+  const guides = { lower: lowerBodyGuide, posterior: posteriorChainGuide, core: coreGuide, upper: upperBodyGuide }
+  const x = (exercise.visual.slot % 3) * 50, y = Math.floor(exercise.visual.slot / 3) * 50
+  return <div className={`exercise-visual ${status}`} role="img" aria-label={`${exercise.name} cartoon exercise guide`} style={{ backgroundImage: `url(${guides[exercise.visual.sheet]})`, backgroundPosition: `${x}% ${y}%`, backgroundSize: '300% 300%' }}><span>{status === 'complete' ? '✓' : status === 'skipped' ? '—' : number}</span></div>
 }
 
 function RoundTimeline({ rounds, currentRound, phase, seconds }: { rounds: number; currentRound: number; phase: 'work' | 'rest'; seconds: number }) {
