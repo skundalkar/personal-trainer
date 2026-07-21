@@ -8,7 +8,7 @@ import lungeGuide from './assets/lunge-guide.png'
 const WASM = 'https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.22-rc.20250304/wasm'
 const MODEL = 'https://storage.googleapis.com/mediapipe-models/pose_landmarker/pose_landmarker_lite/float16/1/pose_landmarker_lite.task'
 type Pace = { work: number; rest: number; rounds: number }
-type SessionItem = { id: ExerciseId; reason: string; completed?: boolean }
+type SessionItem = { id: ExerciseId; reason: string; completed?: boolean; skipped?: boolean }
 const defaultPace: Pace = { work: 45, rest: 45, rounds: 4 }
 const defaultQueue: SessionItem[] = [
   { id: 'sumo-squat', reason: 'Matches your squat preference and no-equipment setup.' },
@@ -107,17 +107,27 @@ export default function App() {
   }
   function playPattern(signal: 'start' | 'work' | 'rest' | 'next' | 'complete') {
     if (!audioContext.current) return
-    if (signal === 'rest') playTone(300, .16)
-    if (signal === 'work') { playTone(620, .1); playTone(780, .12, .14) }
+    if (signal === 'rest') { playTone(300, .1); playTone(190, .16, .12) }
+    if (signal === 'work') { playTone(620, .08); playTone(780, .08, .11); playTone(940, .14, .22) }
     if (signal === 'next') { playTone(520, .1); playTone(700, .12, .14) }
     if (signal === 'start') { playTone(620, .1); playTone(780, .1, .14); playTone(940, .14, .28) }
     if (signal === 'complete') { playTone(520, .1); playTone(660, .1, .14); playTone(880, .18, .28) }
   }
   function skipCurrent() {
-    if (index === queue.length - 1) { setFinished(true); setPaused(true); return }
-    setQueue((items) => items.map((item, itemIndex) => itemIndex === index ? { ...item, completed: true } : item))
+    if (index === queue.length - 1) { setQueue((items) => items.map((item, itemIndex) => itemIndex === index ? { ...item, skipped: true } : item)); setFinished(true); setPaused(true); return }
+    setQueue((items) => items.map((item, itemIndex) => itemIndex === index ? { ...item, skipped: true } : item))
     setIndex((value) => value + 1); setRound(1); setPhase('work'); setSeconds(pace.work)
   }
+  function skipRound() {
+    if (round >= sessionRounds) {
+      const nextIndex = index + 1
+      setQueue((items) => items.map((item, itemIndex) => itemIndex === index ? { ...item, completed: true } : item))
+      if (nextIndex < queue.length && !momentum) { setIndex(nextIndex); setRound(1); setPhase('work'); setSeconds(pace.work) } else { setFinished(true); setPaused(true) }
+      return
+    }
+    setRound((value) => value + 1); setPhase('work'); setSeconds(pace.work); playPattern('work')
+  }
+  function openPace() { setPaused(true); setShowPace(true) }
   function applyPace(next: Pace, save = false) {
     setPace(next)
     setSessionRounds(next.rounds)
@@ -171,7 +181,7 @@ export default function App() {
 
   if (screen === 'active' && currentExercise) return <main className="app-shell session-shell">
     <header><span className="brand">FORMWISE</span><button className="text-button" onClick={() => { stopCamera(); setScreen('today'); setPaused(true) }}>Exit session</button></header>
-    <section className="queue session-queue" aria-live="polite"><div className="section-heading session-heading"><div><p className="eyebrow">TODAY’S SESSION</p><h2>{finished ? 'Session complete' : momentum ? 'Five-minute start' : 'In progress'}</h2><span>~{estimatedMinutes} min · {pace.work}s on / {pace.rest}s off</span></div>{!finished && <button onClick={() => setPaused((value) => !value)}>{paused ? 'Resume session' : 'Pause session'}</button>}</div>{queue.map((item, itemIndex) => { const exercise = findExercise(item.id), active = itemIndex === index && !finished, done = Boolean(item.completed); return <article className={`queue-item session-row ${active ? 'is-active' : ''} ${done ? 'is-complete' : ''}`} key={`${item.id}-${itemIndex}`}><ExerciseVisual exercise={exercise} number={itemIndex + 1} status={done ? 'complete' : active ? 'active' : 'queued'} /><div className="session-identity"><h3>{exercise.name}</h3><p>{exercise.category} · {sessionRounds} rounds · {pace.work}s / {pace.rest}s</p>{active && <small>{exercise.setup}</small>}</div><div className="session-progress">{done ? <><b>Complete</b><strong>✓</strong><small>{sessionRounds} of {sessionRounds} rounds</small></> : active ? <><b className={phase}>{phase}</b><strong>{format(Math.max(0, seconds))}</strong><small>Round {round} of {sessionRounds}</small><div className="mini-rounds">{Array.from({ length: sessionRounds }, (_, roundIndex) => <i key={roundIndex} className={roundIndex + 1 < round ? 'done' : roundIndex + 1 === round ? 'now' : ''} />)}</div></> : <><b>Queued</b><strong>{pace.work}s</strong><small>{sessionRounds} rounds planned</small></>}</div>{active ? <div className="row-actions"><button className="secondary" onClick={() => setShowPace(true)}>Pace</button><button className="secondary" onClick={() => setSwapIndex(index)}>Swap</button><button className="text-button" onClick={skipCurrent}>Skip</button></div> : !done && <button className="secondary swap-button" onClick={() => setSwapIndex(itemIndex)}>Swap</button>}</article> })}{finished && <div className="session-finish"><b>{momentum ? 'Five minutes complete.' : 'All done.'}</b><span>Completion is saved as a positive preference signal.</span><button className="secondary" onClick={() => setScreen('today')}>Back to Today</button></div>}</section>
+    <section className="queue session-queue" aria-live="polite"><div className="section-heading session-heading"><div><p className="eyebrow">TODAY’S SESSION</p><h2>{finished ? 'Session complete' : momentum ? 'Five-minute start' : 'In progress'}</h2><span>~{estimatedMinutes} min · {pace.work}s on / {pace.rest}s off</span></div>{!finished && <button onClick={() => setPaused((value) => !value)}>{paused ? 'Resume session' : 'Pause session'}</button>}</div>{queue.map((item, itemIndex) => { const exercise = findExercise(item.id), active = itemIndex === index && !finished, done = Boolean(item.completed), skipped = Boolean(item.skipped); return <article className={`queue-item session-row ${active ? 'is-active' : ''} ${done ? 'is-complete' : ''} ${skipped ? 'is-skipped' : ''}`} key={`${item.id}-${itemIndex}`}><ExerciseVisual exercise={exercise} number={itemIndex + 1} status={skipped ? 'skipped' : done ? 'complete' : active ? 'active' : 'queued'} /><div className="session-identity"><h3>{exercise.name}</h3><p>{exercise.category} · {sessionRounds} rounds · {pace.work}s / {pace.rest}s</p>{active && <small>{exercise.setup}</small>}</div><div className="session-progress">{skipped ? <><b>Skipped</b><strong>—</strong><small>Exercise skipped</small></> : done ? <><b>Complete</b><strong>✓</strong><small>{sessionRounds} of {sessionRounds} rounds</small></> : active ? <div className={`interval-display ${phase}`}><span aria-hidden="true">{phase === 'work' ? '▶' : 'Ⅱ'}</span><div><b>{phase}</b><strong>{format(Math.max(0, seconds))}</strong><small>Round {round} of {sessionRounds}</small></div></div> : <><b>Queued</b><strong>{pace.work}s</strong><small>{sessionRounds} rounds planned</small></>}</div>{active ? <><div className="row-actions"><button className="secondary" onClick={openPace}>Pace</button><button className="secondary" onClick={() => setSwapIndex(index)}>Swap</button><button className="secondary" onClick={skipRound}>Skip round</button><button className="text-button" onClick={skipCurrent}>Skip exercise</button></div><RoundTimeline rounds={sessionRounds} currentRound={round} phase={phase} seconds={Math.max(0, seconds)} /></> : !done && !skipped && <button className="secondary swap-button" onClick={() => setSwapIndex(itemIndex)}>Swap</button>}</article> })}{finished && <div className="session-finish"><b>{momentum ? 'Five minutes complete.' : 'All done.'}</b><span>Completion is saved as a positive preference signal.</span><button className="secondary" onClick={() => setScreen('today')}>Back to Today</button></div>}</section>
     {showPace && <PacePanel pace={pace} onApply={applyPace} onClose={() => setShowPace(false)} />}{swapIndex !== null && <SwapPanel source={findExercise(queue[swapIndex].id).name} reason={swapReason} setReason={setSwapReason} alternatives={alternatives} onChoose={replace} onClose={() => setSwapIndex(null)} />}
   </main>
 
@@ -185,11 +195,22 @@ export default function App() {
   </main>
 }
 
-function ExerciseVisual({ exercise, number, status = 'queued' }: { exercise: ReturnType<typeof findExercise>; number: number; status?: 'queued' | 'active' | 'complete' }) {
+function ExerciseVisual({ exercise, number, status = 'queued' }: { exercise: ReturnType<typeof findExercise>; number: number; status?: 'queued' | 'active' | 'complete' | 'skipped' }) {
   const lunge = exercise.id === 'lateral-lunge' || exercise.id === 'curtsy-lunge'
   const guideSlot = exercise.id === 'lateral-lunge' ? 0 : exercise.id === 'curtsy-lunge' ? 1 : ({ 'bodyweight-squat': 0, 'sumo-squat': 0, 'romanian-deadlift': 1, 'glute-bridge': 2, 'forearm-plank': 3, 'russian-twist': 3, 'push-up': 3, 'split-squat': 0, 'shoulder-press': 4, 'tricep-extension': 5 } as Record<Exclude<ExerciseId, 'lateral-lunge' | 'curtsy-lunge'>, number>)[exercise.id as Exclude<ExerciseId, 'lateral-lunge' | 'curtsy-lunge'>]
   const x = lunge ? guideSlot * 100 : (guideSlot % 3) * 50, y = lunge ? 0 : Math.floor(guideSlot / 3) * 100
-  return <div className={`exercise-visual ${status}`} role="img" aria-label={`${exercise.name} cartoon exercise guide`} style={{ backgroundImage: `url(${lunge ? lungeGuide : exerciseGuide})`, backgroundPosition: `${x}% ${y}%`, backgroundSize: lunge ? '200% 100%' : '300% 200%' }}><span>{status === 'complete' ? '✓' : number}</span></div>
+  return <div className={`exercise-visual ${status}`} role="img" aria-label={`${exercise.name} cartoon exercise guide`} style={{ backgroundImage: `url(${lunge ? lungeGuide : exerciseGuide})`, backgroundPosition: `${x}% ${y}%`, backgroundSize: lunge ? '200% 100%' : '300% 200%' }}><span>{status === 'complete' ? '✓' : status === 'skipped' ? '—' : number}</span></div>
+}
+
+function RoundTimeline({ rounds, currentRound, phase, seconds }: { rounds: number; currentRound: number; phase: 'work' | 'rest'; seconds: number }) {
+  return <div className="round-timeline" role="list" aria-label={`${rounds} rounds, currently round ${currentRound} in ${phase}`}>
+    {Array.from({ length: rounds }, (_, roundIndex) => {
+      const number = roundIndex + 1, completed = number < currentRound, current = number === currentRound
+      const workState = completed || (current && phase === 'rest') ? 'done' : current && phase === 'work' ? 'active' : 'upcoming'
+      const restState = completed ? 'done' : current && phase === 'rest' ? 'active' : 'upcoming'
+      return <div className={`round-unit ${completed ? 'complete' : current ? 'current' : ''}`} role="listitem" key={number} aria-label={`Round ${number}: work ${workState}, rest ${restState}`}><span className="round-number">{number}</span><span className={`phase-half work ${workState}`}>{workState === 'done' ? '✓' : workState === 'active' ? <><i>▶</i><b>{format(seconds)}</b><small>WORK</small></> : '—'}</span><span className={`phase-half rest ${restState}`}>{restState === 'done' ? '✓' : restState === 'active' ? <><i>Ⅱ</i><b>{format(seconds)}</b><small>REST</small></> : '—'}</span></div>
+    })}
+  </div>
 }
 
 function PacePanel({ pace, onApply, onClose }: { pace: Pace; onApply: (pace: Pace, save?: boolean) => void; onClose: () => void }) {
